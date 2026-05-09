@@ -1,0 +1,64 @@
+﻿services:
+
+  guacd:
+    image: guacamole/guacd:1.6.0
+    container_name: guacd
+    restart: unless-stopped
+    user: "1001:1001"
+    volumes:
+      - ./recordings:/recordings
+
+  postgres:
+    image: postgres:16
+    container_name: guacamole-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: guacamole_db
+      POSTGRES_USER: guacamole_user
+      POSTGRES_PASSWORD: CHANGE_ME_STRONG_DB_PASSWORD
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+
+  guacamole:
+    image: guacamole/guacamole:1.6.0
+    container_name: guacamole
+    restart: unless-stopped
+    user: "1001:1001"
+    depends_on:
+      - guacd
+      - postgres
+    ports:
+      - "8080:8080"
+    environment:
+      GUACD_HOSTNAME: guacd
+      GUACD_PORT: 4822
+
+      POSTGRESQL_HOSTNAME: postgres
+      POSTGRESQL_PORT: 5432
+      POSTGRESQL_DATABASE: guacamole_db
+      POSTGRESQL_USER: guacamole_user
+      POSTGRESQL_PASSWORD: CHANGE_ME_STRONG_DB_PASSWORD
+
+      WEBAPP_CONTEXT: ROOT
+
+      RECORDING_SEARCH_PATH: /recordings
+
+    volumes:
+      - ./recordings:/recordings:ro
+
+  recording-player:
+    build: .
+    container_name: guacamole-recording-player
+    restart: unless-stopped
+    depends_on:
+      - guacd
+    ports:
+      - "8090:8080"
+    environment:
+      RECORDINGS_ROOT: /recordings
+    volumes:
+      - ./recordings:/recordings:ro
+
+volumes:
+  postgres_data:

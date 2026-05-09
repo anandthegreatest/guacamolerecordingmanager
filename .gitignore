@@ -1,0 +1,9 @@
+target/
+.tmp/
+.idea/
+.vscode/
+*.log
+
+# Local Guacamole recordings can contain sensitive session data.
+recordings/*
+!recordings/.gitkeep

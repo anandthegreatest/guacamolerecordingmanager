@@ -1,0 +1,17 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: guacamole-recording-player
+  thymeleaf:
+    cache: false
+
+recordings:
+  root: ${RECORDINGS_ROOT:/recordings}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

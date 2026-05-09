@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Guacamole Recording Player</title>
+    <link rel="stylesheet" th:href="@{/css/player.css}">
+</head>
+<body>
+<main class="shell">
+    <aside class="recordings-panel" aria-label="Recordings">
+        <div class="panel-title">Recordings</div>
+        <div class="recordings-root" th:text="${recordingsRoot}">/recordings</div>
+        <div class="empty-state" th:if="${#lists.isEmpty(recordings)}">
+            No recordings found.
+        </div>
+        <button class="recording-row"
+                th:each="recording, iter : ${recordings}"
+                th:classappend="${iter.first} ? 'active' : ''"
+                type="button"
+                th:data-path="${recording.path}"
+                th:data-name="${recording.name}">
+            <span class="recording-name" th:text="${recording.name}">recording</span>
+            <span class="recording-path" th:text="${recording.path}">path</span>
+            <span class="recording-meta">
+                <span th:text="${recording.modified}">modified</span>
+                <span th:text="${#numbers.formatDecimal(recording.size / 1048576.0, 1, 1)} + ' MB'">0 MB</span>
+            </span>
+        </button>
+    </aside>
+
+    <section class="player">
+        <div class="viewer">
+            <div id="display" class="display"></div>
+            <div id="placeholder" class="placeholder">
+                <div class="placeholder-title">Select a recording</div>
+                <div class="placeholder-copy">Playback will appear here.</div>
+            </div>
+        </div>
+
+        <div class="controls" aria-label="Playback controls">
+            <button id="playPause" class="control-button primary" type="button" aria-label="Play or pause" disabled>
+                <span class="play-icon"></span>
+            </button>
+            <div class="time current" id="currentTime">00:00</div>
+            <input id="seek" class="seek" type="range" min="0" max="0" step="100" value="0" disabled>
+            <div class="time duration" id="duration">00:00</div>
+            <button id="restart" class="control-button" type="button" aria-label="Restart" disabled>
+                <span class="restart-icon"></span>
+            </button>
+            <button id="fit" class="control-button" type="button" aria-label="Fit to window" disabled>
+                <span class="fit-icon"></span>
+            </button>
+            <select id="speed" class="speed-select" aria-label="Playback speed" disabled>
+                <option value="1">1x</option>
+                <option value="1.25">1.25x</option>
+                <option value="1.5">1.5x</option>
+                <option value="2">2x</option>
+                <option value="3">3x</option>
+                <option value="4">4x</option>
+                <option value="8">8x</option>
+            </select>
+        </div>
+
+        <div id="status" class="status">Ready</div>
+    </section>
+
+    <aside class="inspector" aria-label="Recording activity">
+        <section class="inspector-section">
+            <div class="section-heading">
+                <h2>Activity</h2>
+                <span id="activitySummary">No recording loaded</span>
+            </div>
+            <div id="histogram" class="histogram" aria-label="Recording activity histogram"></div>
+            <div class="histogram-legend">
+                <span><i class="legend-activity"></i>Protocol activity</span>
+                <span><i class="legend-keys"></i>Keystrokes</span>
+            </div>
+        </section>
+
+        <section class="inspector-section key-section">
+            <div class="section-heading">
+                <h2>Keystrokes</h2>
+                <span id="keySummary">Waiting for parse</span>
+            </div>
+            <div id="keyEvents" class="key-events">
+                <div class="muted-row">Key events will appear after the recording is parsed.</div>
+            </div>
+        </section>
+    </aside>
+</main>
+
+<script th:src="@{/vendor/guacamole-common-js/all.min.js}"></script>
+<script th:src="@{/js/player.js}"></script>
+</body>
+</html>
