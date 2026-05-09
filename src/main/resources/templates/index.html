@@ -16,7 +16,7 @@
         </div>
         <button class="recording-row"
                 th:each="recording, iter : ${recordings}"
-                th:classappend="${iter.first} ? 'active' : ''"
+                th:classappend="${recording.path == selectedPath} ? 'active' : ''"
                 type="button"
                 th:data-path="${recording.path}"
                 th:data-name="${recording.name}">

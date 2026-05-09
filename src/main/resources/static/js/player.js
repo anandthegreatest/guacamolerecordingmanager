@@ -479,6 +479,6 @@
     setPlayIcon(false);
 
     if (rows.length > 0) {
-        loadRecording(rows[0]);
+        loadRecording(document.querySelector(".recording-row.active") || rows[0]);
     }
 })();

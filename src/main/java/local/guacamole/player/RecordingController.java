@@ -16,6 +16,7 @@ import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 
 @Controller
@@ -29,9 +30,33 @@ public class RecordingController {
 
     @GetMapping("/")
     public String index(Model model) throws IOException {
+        return player(model, null);
+    }
+
+    @GetMapping("/play/{recordingName}")
+    public String playByName(@PathVariable String recordingName, Model model) throws IOException {
+        RecordingFile selected = recordingService.findByNameOrPath(recordingName)
+                .orElseThrow(RecordingNotFoundException::new);
+        return player(model, selected.path());
+    }
+
+    @GetMapping("/play")
+    public String playByQuery(@RequestParam("recording") String recording, Model model) throws IOException {
+        RecordingFile selected = recordingService.findByNameOrPath(recording)
+                .orElseThrow(RecordingNotFoundException::new);
+        return player(model, selected.path());
+    }
+
+    private String player(Model model, String selectedPath) throws IOException {
         var recordings = recordingService.recordings();
+        String resolvedSelectedPath = selectedPath;
+
+        if (resolvedSelectedPath == null && !recordings.isEmpty()) {
+            resolvedSelectedPath = recordings.getFirst().path();
+        }
+
         model.addAttribute("recordings", recordings);
-        model.addAttribute("selected", recordings.isEmpty() ? null : recordings.getFirst());
+        model.addAttribute("selectedPath", resolvedSelectedPath);
         model.addAttribute("recordingsRoot", recordingService.root().toString());
         return "index";
     }

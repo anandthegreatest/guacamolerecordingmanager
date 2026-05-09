@@ -8,6 +8,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -44,6 +45,26 @@ public class RecordingService {
                             .thenComparing(RecordingFile::path))
                     .toList();
         }
+    }
+
+    public Optional<RecordingFile> findByNameOrPath(String nameOrPath) throws IOException {
+        if (nameOrPath == null || nameOrPath.isBlank()) {
+            return Optional.empty();
+        }
+
+        String cleanValue = StringUtils.trimLeadingCharacter(nameOrPath.trim(), '/');
+
+        try {
+            Path exactPath = resolveRecording(cleanValue);
+            return Optional.of(toRecordingFile(exactPath));
+        }
+        catch (RecordingNotFoundException ignored) {
+            // Fall back to filename lookup below.
+        }
+
+        return recordings().stream()
+                .filter(recording -> recording.name().equals(cleanValue))
+                .findFirst();
     }
 
     public Path resolveRecording(String rawPath) {

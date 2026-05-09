@@ -55,8 +55,6 @@
       - guacd
     ports:
       - "8090:8080"
-    environment:
-      RECORDINGS_ROOT: /recordings
     volumes:
       - ./recordings:/recordings:ro
 

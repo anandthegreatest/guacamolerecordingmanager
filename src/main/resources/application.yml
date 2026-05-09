@@ -8,6 +8,8 @@ spring:
     cache: false
 
 recordings:
+  # Path inside the running app/container where Guacamole recordings are mounted.
+  # Override with RECORDINGS_ROOT if preferred.
   root: ${RECORDINGS_ROOT:/recordings}
 
 management:
