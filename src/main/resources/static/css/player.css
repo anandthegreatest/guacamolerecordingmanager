@@ -463,6 +463,11 @@ select {
     background: #e0b24f;
 }
 
+.key-row-clipboard .key-value {
+    color: #121212;
+    background: #77d0a7;
+}
+
 .muted-row {
     padding: 14px;
     color: var(--muted);

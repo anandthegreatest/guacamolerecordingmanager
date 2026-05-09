@@ -20,6 +20,8 @@
     let dragging = false;
     let analysisRequest = null;
     let playbackSpeed = 1;
+    let latestKeyEvents = null;
+    let latestClipboardEvents = [];
 
     const playbackClock = (function () {
         const realDateNow = Date.now.bind(Date);
@@ -155,7 +157,9 @@
         setPlayIcon(false);
         updateTime(0, 0);
         renderHistogram(null);
-        renderKeyEvents(null);
+        latestKeyEvents = null;
+        latestClipboardEvents = [];
+        renderInputActivity();
     }
 
     function renderHistogram(analysis) {
@@ -280,25 +284,51 @@
         return groups;
     }
 
-    function renderKeyEvents(events) {
+    function displayClipboardText(event) {
+        if (event.text) {
+            const collapsed = event.text.replace(/\s+/g, " ").trim();
+            return collapsed || "(blank text)";
+        }
+
+        return `${event.mimetype || "clipboard"} (${event.length || 0} bytes)`;
+    }
+
+    function buildInputGroups() {
+        const keyGroups = latestKeyEvents ? groupKeyEvents(latestKeyEvents) : [];
+        const clipboardGroups = latestClipboardEvents.map(event => ({
+            type: "clipboard",
+            label: displayClipboardText(event),
+            start: event.timestamp || 0,
+            end: event.timestamp || 0,
+            mimetype: event.mimetype || "clipboard",
+            length: event.length || 0,
+            truncated: Boolean(event.truncated)
+        }));
+
+        return keyGroups.concat(clipboardGroups)
+                .sort((left, right) => left.start - right.start);
+    }
+
+    function renderInputActivity() {
         keyEvents.replaceChildren();
 
-        if (!events) {
+        if (!latestKeyEvents && latestClipboardEvents.length === 0) {
             keySummary.textContent = "Waiting for parse";
             const row = document.createElement("div");
             row.className = "muted-row";
-            row.textContent = "Key events will appear after the recording is parsed.";
+            row.textContent = "Keystrokes and clipboard activity will appear after the recording is parsed.";
             keyEvents.appendChild(row);
             return;
         }
 
-        const groups = groupKeyEvents(events);
-        keySummary.textContent = `${groups.length} groups from ${events.length} events`;
+        const groups = buildInputGroups();
+        const keyEventCount = latestKeyEvents ? latestKeyEvents.length : 0;
+        keySummary.textContent = `${groups.length} items from ${keyEventCount} key events and ${latestClipboardEvents.length} clipboard events`;
 
         if (groups.length === 0) {
             const row = document.createElement("div");
             row.className = "muted-row";
-            row.textContent = "No key events were recorded for this session.";
+            row.textContent = "No key or clipboard events were recorded for this session.";
             keyEvents.appendChild(row);
             return;
         }
@@ -306,8 +336,10 @@
         groups.forEach(group => {
             const row = document.createElement("button");
             row.type = "button";
-            row.className = `key-row ${group.type === "text" ? "key-row-text" : "key-row-command"}`;
-            row.title = "Seek to this keystroke group";
+            row.className = `key-row ${group.type === "text" ? "key-row-text" : ""} ${group.type === "clipboard" ? "key-row-clipboard" : ""} ${group.type === "key" ? "key-row-command" : ""}`;
+            row.title = group.type === "clipboard"
+                ? `${group.mimetype}, ${group.length} bytes${group.truncated ? ", truncated" : ""}`
+                : "Seek to this keystroke group";
             row.addEventListener("click", function () {
                 if (recording) {
                     recording.seek(Math.max(0, group.start || 0));
@@ -329,7 +361,9 @@
 
             const state = document.createElement("span");
             state.className = "key-state";
-            state.textContent = group.type === "text" ? "typed" : "key";
+            state.textContent = group.type === "text"
+                ? "typed"
+                : group.type === "clipboard" ? "clip" : "key";
 
             row.append(time, name, state);
             keyEvents.appendChild(row);
@@ -344,7 +378,10 @@
             if (!response.ok) {
                 throw new Error(`Analysis failed (${response.status})`);
             }
-            renderHistogram(await response.json());
+            const analysis = await response.json();
+            latestClipboardEvents = analysis.clipboardEvents || [];
+            renderHistogram(analysis);
+            renderInputActivity();
         }
         catch (error) {
             if (error.name !== "AbortError") {
@@ -390,7 +427,8 @@
         };
 
         recording.onkeyevents = function (events) {
-            renderKeyEvents(events);
+            latestKeyEvents = events;
+            renderInputActivity();
         };
 
         recording.onplay = function () {

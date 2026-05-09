@@ -1,13 +1,17 @@
 package local.guacamole.player;
 
 import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
@@ -15,9 +19,12 @@ import org.springframework.stereotype.Component;
 public class GuacamoleRecordingAnalyzer {
 
     private static final int BUCKET_COUNT = 80;
+    private static final int MAX_CLIPBOARD_TEXT_LENGTH = 4096;
 
     public RecordingAnalysis analyze(Path recording) throws IOException {
         List<EventPoint> events = new ArrayList<>();
+        List<RecordingClipboardEvent> clipboardEvents = new ArrayList<>();
+        Map<Integer, ClipboardStream> clipboardStreams = new HashMap<>();
         long firstSync = -1;
         long lastSync = -1;
         long currentTimestamp = 0;
@@ -45,6 +52,35 @@ public class GuacamoleRecordingAnalyzer {
                     }
                     events.add(new EventPoint(keyTimestamp, true));
                 }
+                else if ("clipboard".equals(instruction.opcode()) && instruction.args().size() >= 2) {
+                    int streamIndex = parseInt(instruction.args().get(0), -1);
+                    if (streamIndex >= 0) {
+                        clipboardStreams.put(streamIndex, new ClipboardStream(currentTimestamp, instruction.args().get(1)));
+                    }
+                    if (firstSync >= 0) {
+                        events.add(new EventPoint(currentTimestamp, false));
+                    }
+                }
+                else if ("blob".equals(instruction.opcode()) && instruction.args().size() >= 2) {
+                    int streamIndex = parseInt(instruction.args().get(0), -1);
+                    ClipboardStream stream = clipboardStreams.get(streamIndex);
+                    if (stream != null) {
+                        stream.append(instruction.args().get(1));
+                    }
+                    if (firstSync >= 0) {
+                        events.add(new EventPoint(currentTimestamp, false));
+                    }
+                }
+                else if ("end".equals(instruction.opcode()) && !instruction.args().isEmpty()) {
+                    int streamIndex = parseInt(instruction.args().getFirst(), -1);
+                    ClipboardStream stream = clipboardStreams.remove(streamIndex);
+                    if (stream != null) {
+                        clipboardEvents.add(stream.toEvent());
+                    }
+                    if (firstSync >= 0) {
+                        events.add(new EventPoint(currentTimestamp, false));
+                    }
+                }
                 else if (firstSync >= 0) {
                     events.add(new EventPoint(currentTimestamp, false));
                 }
@@ -52,7 +88,7 @@ public class GuacamoleRecordingAnalyzer {
         }
 
         long duration = firstSync >= 0 && lastSync >= firstSync ? lastSync - firstSync : 0;
-        return new RecordingAnalysis(duration, instructions, keys, bucketize(duration, events));
+        return new RecordingAnalysis(duration, instructions, keys, bucketize(duration, events), clipboardEvents);
     }
 
     private List<ActivityBucket> bucketize(long duration, List<EventPoint> events) {
@@ -132,9 +168,50 @@ public class GuacamoleRecordingAnalyzer {
         }
     }
 
+    private int parseInt(String value, int fallback) {
+        try {
+            return Integer.parseInt(value);
+        }
+        catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
     private record EventPoint(long timestamp, boolean key) {
     }
 
     private record GuacamoleInstruction(String opcode, List<String> args) {
+    }
+
+    private static class ClipboardStream {
+
+        private final long timestamp;
+        private final String mimetype;
+        private final ByteArrayOutputStream data = new ByteArrayOutputStream();
+
+        ClipboardStream(long timestamp, String mimetype) {
+            this.timestamp = timestamp;
+            this.mimetype = mimetype;
+        }
+
+        void append(String base64) throws IOException {
+            data.write(Base64.getDecoder().decode(base64));
+        }
+
+        RecordingClipboardEvent toEvent() {
+            byte[] bytes = data.toByteArray();
+            String text = isText() ? new String(bytes, StandardCharsets.UTF_8) : "";
+            boolean truncated = text.length() > MAX_CLIPBOARD_TEXT_LENGTH;
+
+            if (truncated) {
+                text = text.substring(0, MAX_CLIPBOARD_TEXT_LENGTH);
+            }
+
+            return new RecordingClipboardEvent(timestamp, mimetype, text, bytes.length, truncated);
+        }
+
+        private boolean isText() {
+            return mimetype != null && (mimetype.equals("text/plain") || mimetype.startsWith("text/"));
+        }
     }
 }
