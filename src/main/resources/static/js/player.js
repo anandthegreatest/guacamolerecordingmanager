@@ -304,10 +304,6 @@
         return event.pressed && typeof value === "string" && value.length === 1 && value !== "\n" && value !== "\t";
     }
 
-    function isWordCharacter(value) {
-        return /^[A-Za-z0-9_-]$/.test(value);
-    }
-
     function pushTextGroup(groups, text, start, end) {
         if (text) {
             groups.push({
@@ -319,13 +315,62 @@
         }
     }
 
+    function keyModifiers(keysym) {
+        switch (Number(keysym)) {
+            case 65505:
+            case 65506:
+                return "Shift";
+            case 65507:
+            case 65508:
+                return "Ctrl";
+            case 65511:
+            case 65512:
+            case 65513:
+            case 65514:
+                return "Alt";
+            case 65515:
+            case 65516:
+                return "Super";
+            default:
+                return null;
+        }
+    }
+
+    function formatChord(modifiers, event) {
+        const key = displayKeyName(event);
+        const displayKey = key.length === 1 ? key.toUpperCase() : key;
+        return modifiers.concat(displayKey).join("+");
+    }
+
+    function orderedModifiers(modifiers) {
+        return ["Ctrl", "Alt", "Shift", "Super"].filter(modifier => modifiers.has(modifier));
+    }
+
+    function hasShortcutModifier(modifiers) {
+        return modifiers.has("Ctrl") || modifiers.has("Alt") || modifiers.has("Super");
+    }
+
     function groupKeyEvents(events) {
         const groups = [];
+        const pressedModifiers = new Set();
         let text = "";
         let textStart = 0;
         let textEnd = 0;
 
         events.forEach(event => {
+            const keysym = event.definition && event.definition.keysym;
+            const modifier = keyModifiers(keysym);
+
+            if (modifier) {
+                if (event.pressed) {
+                    pressedModifiers.add(modifier);
+                }
+                else {
+                    pressedModifiers.delete(modifier);
+                }
+                return;
+            }
+
             if (!event.pressed) {
                 return;
             }
@@ -333,23 +378,23 @@
             if (isPrintableKey(event)) {
                 const value = event.definition.value;
 
-                if (isWordCharacter(value)) {
-                    if (!text) {
-                        textStart = event.timestamp || 0;
-                    }
-                    text += value;
-                    textEnd = event.timestamp || textStart;
+                if (hasShortcutModifier(pressedModifiers)) {
+                    pushTextGroup(groups, text, textStart, textEnd);
+                    text = "";
+                    groups.push({
+                        type: "key",
+                        label: formatChord(orderedModifiers(pressedModifiers), event),
+                        start: event.timestamp || 0,
+                        end: event.timestamp || 0
+                    });
                     return;
                 }
 
-                pushTextGroup(groups, text, textStart, textEnd);
-                text = "";
-                groups.push({
-                    type: "text",
-                    label: value === " " ? "Space" : value,
-                    start: event.timestamp || 0,
-                    end: event.timestamp || 0
-                });
+                if (!text) {
+                    textStart = event.timestamp || 0;
+                }
+                text += value;
+                textEnd = event.timestamp || textStart;
                 return;
             }
 
@@ -357,7 +402,9 @@
             text = "";
             groups.push({
                 type: "key",
-                label: displayKeyName(event),
+                label: pressedModifiers.size > 0
+                    ? formatChord(orderedModifiers(pressedModifiers), event)
+                    : displayKeyName(event),
                 start: event.timestamp || 0,
                 end: event.timestamp || 0
             });
