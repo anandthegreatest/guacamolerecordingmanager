@@ -23,6 +23,37 @@
     let latestKeyEvents = null;
     let latestClipboardEvents = [];
 
+    const keyDefinitions = new Map([
+        [65027, { name: "AltGr" }],
+        [65288, { name: "Backspace" }],
+        [65289, { name: "Tab", value: "\t" }],
+        [65293, { name: "Return", value: "\n" }],
+        [65299, { name: "Pause" }],
+        [65300, { name: "Scroll" }],
+        [65307, { name: "Escape" }],
+        [65360, { name: "Home" }],
+        [65361, { name: "Left" }],
+        [65362, { name: "Up" }],
+        [65363, { name: "Right" }],
+        [65364, { name: "Down" }],
+        [65365, { name: "Page Up" }],
+        [65366, { name: "Page Down" }],
+        [65367, { name: "End" }],
+        [65377, { name: "Print Screen" }],
+        [65505, { name: "Shift" }],
+        [65506, { name: "Shift" }],
+        [65507, { name: "Control" }],
+        [65508, { name: "Control" }],
+        [65509, { name: "Caps Lock" }],
+        [65511, { name: "Alt" }],
+        [65512, { name: "Alt" }],
+        [65513, { name: "Alt" }],
+        [65514, { name: "Alt" }],
+        [65515, { name: "Super" }],
+        [65516, { name: "Super" }],
+        [65535, { name: "Delete" }]
+    ]);
+
     const playbackClock = (function () {
         const realDateNow = Date.now.bind(Date);
         const realSetTimeout = window.setTimeout.bind(window);
@@ -216,6 +247,58 @@
         return definition.name || `0x${Number(definition.keysym || 0).toString(16)}`;
     }
 
+    function keyDefinitionFromKeysym(keysym) {
+        const parsedKeysym = Number(keysym) || 0;
+        const knownDefinition = keyDefinitions.get(parsedKeysym);
+        if (knownDefinition) {
+            return {
+                keysym: parsedKeysym,
+                name: knownDefinition.name,
+                value: knownDefinition.value
+            };
+        }
+
+        if ((parsedKeysym >= 32 && parsedKeysym <= 255)
+                || (parsedKeysym >= 0x01000100 && parsedKeysym <= 0x0110ffff)) {
+            const character = String.fromCodePoint(parsedKeysym & 0xffff);
+            return {
+                keysym: parsedKeysym,
+                name: character,
+                value: character
+            };
+        }
+
+        return {
+            keysym: parsedKeysym,
+            name: `0x${parsedKeysym.toString(16)}`
+        };
+    }
+
+    function normalizeKeyEvent(event) {
+        const keysym = event.keysym ?? (event.definition && event.definition.keysym);
+        const timestamp = Number(event.timestamp);
+        return {
+            definition: event.definition || keyDefinitionFromKeysym(keysym),
+            pressed: Boolean(event.pressed),
+            timestamp: Number.isFinite(timestamp) ? timestamp : 0
+        };
+    }
+
+    function normalizeKeyEvents(events) {
+        if (!Array.isArray(events)) {
+            return [];
+        }
+
+        return events
+                .map(normalizeKeyEvent)
+                .filter(event => event.definition && Number.isFinite(Number(event.definition.keysym)));
+    }
+
+    function hasUsableKeyEventTimeline(events) {
+        return Array.isArray(events)
+                && events.every(event => Number.isFinite(Number(event.timestamp)));
+    }
+
     function isPrintableKey(event) {
         const value = event.definition && event.definition.value;
         return event.pressed && typeof value === "string" && value.length === 1 && value !== "\n" && value !== "\t";
@@ -379,6 +462,7 @@
                 throw new Error(`Analysis failed (${response.status})`);
             }
             const analysis = await response.json();
+            latestKeyEvents = normalizeKeyEvents(analysis.keyEvents || []);
             latestClipboardEvents = analysis.clipboardEvents || [];
             renderHistogram(analysis);
             renderInputActivity();
@@ -427,8 +511,15 @@
         };
 
         recording.onkeyevents = function (events) {
-            latestKeyEvents = events;
-            renderInputActivity();
+            if (!hasUsableKeyEventTimeline(events)) {
+                return;
+            }
+
+            const normalizedEvents = normalizeKeyEvents(events);
+            if (normalizedEvents.length > 0) {
+                latestKeyEvents = normalizedEvents;
+                renderInputActivity();
+            }
         };
 
         recording.onplay = function () {

@@ -7,5 +7,6 @@ public record RecordingAnalysis(
         int instructionCount,
         int keyCount,
         List<ActivityBucket> buckets,
+        List<RecordingKeyEvent> keyEvents,
         List<RecordingClipboardEvent> clipboardEvents) {
 }

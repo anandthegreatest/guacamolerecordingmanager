@@ -23,6 +23,7 @@ public class GuacamoleRecordingAnalyzer {
 
     public RecordingAnalysis analyze(Path recording) throws IOException {
         List<EventPoint> events = new ArrayList<>();
+        List<RecordingKeyEvent> keyEvents = new ArrayList<>();
         List<RecordingClipboardEvent> clipboardEvents = new ArrayList<>();
         Map<Integer, ClipboardStream> clipboardStreams = new HashMap<>();
         long firstSync = -1;
@@ -46,16 +47,24 @@ public class GuacamoleRecordingAnalyzer {
                 }
                 else if ("key".equals(instruction.opcode())) {
                     keys++;
-                    long keyTimestamp = currentTimestamp;
-                    if (firstSync >= 0 && instruction.args().size() >= 3) {
-                        keyTimestamp = Math.max(0, parseLong(instruction.args().get(2), firstSync) - firstSync);
+                    if (instruction.args().size() >= 2) {
+                        long keyTimestamp = keyTimestamp(instruction, firstSync, currentTimestamp);
+                        keyEvents.add(new RecordingKeyEvent(
+                                keyTimestamp,
+                                parseInt(instruction.args().get(0), 0),
+                                parseInt(instruction.args().get(1), 0) != 0));
+                        events.add(new EventPoint(keyTimestamp, true));
                     }
-                    events.add(new EventPoint(keyTimestamp, true));
                 }
-                else if ("clipboard".equals(instruction.opcode()) && instruction.args().size() >= 2) {
-                    int streamIndex = parseInt(instruction.args().get(0), -1);
-                    if (streamIndex >= 0) {
-                        clipboardStreams.put(streamIndex, new ClipboardStream(currentTimestamp, instruction.args().get(1)));
+                else if ("clipboard".equals(instruction.opcode()) && !instruction.args().isEmpty()) {
+                    if (instruction.args().size() >= 2) {
+                        int streamIndex = parseInt(instruction.args().get(0), -1);
+                        if (streamIndex >= 0) {
+                            clipboardStreams.put(streamIndex, new ClipboardStream(currentTimestamp, instruction.args().get(1)));
+                        }
+                    }
+                    else {
+                        clipboardEvents.add(ClipboardStream.legacyTextEvent(currentTimestamp, instruction.args().getFirst()));
                     }
                     if (firstSync >= 0) {
                         events.add(new EventPoint(currentTimestamp, false));
@@ -88,7 +97,15 @@ public class GuacamoleRecordingAnalyzer {
         }
 
         long duration = firstSync >= 0 && lastSync >= firstSync ? lastSync - firstSync : 0;
-        return new RecordingAnalysis(duration, instructions, keys, bucketize(duration, events), clipboardEvents);
+        return new RecordingAnalysis(duration, instructions, keys, bucketize(duration, events), keyEvents, clipboardEvents);
+    }
+
+    private long keyTimestamp(GuacamoleInstruction instruction, long firstSync, long currentTimestamp) {
+        if (firstSync >= 0 && instruction.args().size() >= 3) {
+            return Math.max(0, parseLong(instruction.args().get(2), firstSync) - firstSync);
+        }
+
+        return currentTimestamp;
     }
 
     private List<ActivityBucket> bucketize(long duration, List<EventPoint> events) {
@@ -201,13 +218,17 @@ public class GuacamoleRecordingAnalyzer {
         RecordingClipboardEvent toEvent() {
             byte[] bytes = data.toByteArray();
             String text = isText() ? new String(bytes, StandardCharsets.UTF_8) : "";
+            return textEvent(timestamp, mimetype, text, bytes.length);
+        }
+
+        static RecordingClipboardEvent legacyTextEvent(long timestamp, String text) {
+            return textEvent(timestamp, "text/plain", text, text.getBytes(StandardCharsets.UTF_8).length);
+        }
+
+        private static RecordingClipboardEvent textEvent(long timestamp, String mimetype, String text, int length) {
             boolean truncated = text.length() > MAX_CLIPBOARD_TEXT_LENGTH;
-
-            if (truncated) {
-                text = text.substring(0, MAX_CLIPBOARD_TEXT_LENGTH);
-            }
-
-            return new RecordingClipboardEvent(timestamp, mimetype, text, bytes.length, truncated);
+            String eventText = truncated ? text.substring(0, MAX_CLIPBOARD_TEXT_LENGTH) : text;
+            return new RecordingClipboardEvent(timestamp, mimetype, eventText, length, truncated);
         }
 
         private boolean isText() {
